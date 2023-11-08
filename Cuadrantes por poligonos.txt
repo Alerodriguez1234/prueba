@@ -1,3 +1,5 @@
+#Version corregiga
+#nombre
 #Este código solo requiere que se le introduzca un shape de entrada, el de zonas homogeneas de presión con Qi, el Area de edificaciones 
 #Se le debe cambiar el nombre a Ai y crear un nuevo campo llamado Area (que es el área total de cada zona homogenea de presión) en la tabla 
 #de atributos 
