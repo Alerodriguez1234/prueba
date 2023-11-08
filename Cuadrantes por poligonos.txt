@@ -1,0 +1,127 @@
+#Este código solo requiere que se le introduzca un shape de entrada, el de zonas homogeneas de presión con Qi, el Area de edificaciones 
+#Se le debe cambiar el nombre a Ai y crear un nuevo campo llamado Area (que es el área total de cada zona homogenea de presión) en la tabla 
+#de atributos 
+
+#Este código esta configurado para tener un área mínima de cuadrante de 10000 m2 (tamaño común de una cuadra con un buffer). Los cuadrantes
+#Se calculan siguiendo una formula propia de las condiciones de ANC del acueducto Metropolitano de Costa Rica (con 1% de error para que los
+cuadrantes queden más grandes). 
+
+# Importar las bibliotecas necesarias
+import geopandas as gpd
+from shapely.geometry import Polygon
+import math
+import os
+import tkinter as tk
+from tkinter import filedialog
+
+# Inicializar las listas y variables globales
+input_shapefiles = []  # Lista para almacenar los shapefiles de entrada
+
+# Función para dividir un polígono y guardar los cuadrados
+def dividir_y_guardar(gdf, output_folder, area_minima):
+    if gdf is not None:
+        # Crear una lista para almacenar los polígonos de la cuadrícula
+        cuadrados = []
+
+        # Dividir cada polígono y guardar los cuadrados en la lista
+        for index, row in gdf.iterrows():
+            polygon = row['geometry']
+
+            # Obtener el valor del campo "Area" del shape de entrada
+            area_total = row['Area']
+
+            # Obtener el valor del campo "Ai" del shape de entrada
+            ai_value = row['Ai']
+
+            # Calcular el área del cuadrado según la fórmula
+            area_cuadrado_formula = (0.8414 * area_total) / (0.0001 * (ai_value - 1) + 0.8414)
+
+            # Calcular el área del cuadrado como máximo entre el área mínima y el área calculada con la fórmula
+            area_cuadrado = max(area_minima, area_cuadrado_formula)
+
+            # Calcular el lado del cuadrado
+            lado_cuadrado = math.sqrt(area_cuadrado)
+
+            # Dividir el polígono de entrada en cuadrados
+            bounds = polygon.bounds
+            xmin, ymin, xmax, ymax = bounds
+
+            x = xmin
+            while x < xmax:
+                y = ymin
+                while y < ymax:
+                    square = Polygon([(x, y), (x + lado_cuadrado, y), (x + lado_cuadrado, y + lado_cuadrado), (x, y + lado_cuadrado)])
+                    intersection = square.intersection(polygon)
+                    if not intersection.is_empty:
+                        cuadrados.append(intersection)
+                    y += lado_cuadrado
+                x += lado_cuadrado
+
+        # Crear un GeoDataFrame a partir de los cuadrados
+        gdf_cuadrados = gpd.GeoDataFrame(geometry=cuadrados, crs=gdf.crs)
+
+        return gdf_cuadrados
+    else:
+        return None
+
+# Función para seleccionar un shape de entrada y agregarlo a la lista
+def seleccionar_shape_de_entrada():
+    input_shapefile = filedialog.askopenfilename(title="Seleccionar Shapefile de Entrada", filetypes=[("Shapefiles", "*.shp")])
+    if input_shapefile:
+        input_shapefiles.append(input_shapefile)
+        status_label.config(text=f"Shape de entrada agregado: {input_shapefile}")
+
+# Función para procesar los shapefiles de entrada y generar los cuadrantes
+def procesar():
+    output_folder = output_folder_entry.get()
+
+    if input_shapefiles:
+        for input_shapefile in input_shapefiles:
+            # Cargar el shapefile de entrada con GeoPandas
+            gdf = gpd.read_file(input_shapefile)
+
+            # Definir el área mínima deseada (en metros cuadrados)
+            area_minima = 10000  # Establecer el valor mínimo a 10,000 metros cuadrados
+
+            # Dividir los polígonos y obtener el GeoDataFrame de cuadrados
+            gdf_cuadrados = dividir_y_guardar(gdf, output_folder, area_minima)
+
+            if gdf_cuadrados is not None:
+                # Obtener el nombre del archivo de entrada
+                input_filename = os.path.basename(input_shapefile)
+
+                # Construir la ruta completa del archivo de salida
+                output_shapefile = os.path.join(output_folder, f'Cuadros_{os.path.splitext(input_filename)[0]}.shp')
+
+                # Guardar el GeoDataFrame de cuadrados en un nuevo shapefile
+                gdf_cuadrados.to_file(output_shapefile)
+
+        status_label.config(text=f"Proceso completado. Archivos de salida generados.")
+    else:
+        status_label.config(text="Proceso cancelado")
+
+# Crear una ventana de Tkinter
+root = tk.Tk()
+root.title("Dividir Polígono en Cuadrados")
+
+# Etiqueta y entrada para la carpeta de salida
+output_label = tk.Label(root, text="Carpeta de Salida:")
+output_label.pack()
+output_folder_entry = tk.Entry(root)
+output_folder_entry.pack()
+output_button = tk.Button(root, text="Seleccionar Carpeta de Salida", command=lambda: output_folder_entry.insert(0, filedialog.askdirectory()))
+output_button.pack()
+
+# Botón para seleccionar shape de entrada y agregarlo a la lista
+input_button = tk.Button(root, text="Agregar Shapefile de Entrada", command=seleccionar_shape_de_entrada)
+input_button.pack()
+
+# Botón para procesar los shapefiles de entrada
+process_button = tk.Button(root, text="Procesar", command=procesar)
+process_button.pack()
+
+# Etiqueta para mostrar el estado del proceso
+status_label = tk.Label(root, text="")
+status_label.pack()
+
+root.mainloop()
